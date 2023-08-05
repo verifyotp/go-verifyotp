@@ -19,15 +19,15 @@ type Client struct {
 // BaseURL is the base URL for calling the Encore application's API.
 type BaseURL string
 
-const Local BaseURL = "http://localhost:4000"
-
 // Option allows you to customise the baseClient used by the Client
 type Option = func(client *baseClient) error
 
 // New returns a Client for calling the public and authenticated APIs of your Encore application.
 // You can customize the behaviour of the client using the given Option functions, such as WithHTTPClient or WithAuthFunc.
-func New(target BaseURL, options ...Option) (*Client, error) {
+func New(options ...Option) (*Client, error) {
 	// Parse the base URL where the Encore application is being hosted
+
+	const target BaseURL = "http://api.verifyotp.io"
 	baseURL, err := url.Parse(string(target))
 	if err != nil {
 		return nil, fmt.Errorf("unable to parse base url: %w", err)
@@ -79,7 +79,6 @@ func WithAuthFunc(authGenerator func(ctx context.Context) (AccountMyAuthParams, 
 }
 
 type AccountMyAuthParams struct {
-	Authorization string `header:"Authorization"`
 	APIKEY        string `header:"X-API-KEY"`
 }
 
@@ -205,7 +204,6 @@ func (b *baseClient) Do(req *http.Request) (*http.Response, error) {
 			authEncoder := &serde{}
 
 			// Add the auth fields to the headers
-			req.Header.Set("authorization", authEncoder.FromString(authData.Authorization))
 			req.Header.Set("x-api-key", authEncoder.FromString(authData.APIKEY))
 
 			if authEncoder.LastError != nil {
