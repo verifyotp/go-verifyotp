@@ -14,7 +14,7 @@ import (
 
 func main() {
 	// Initialize the client with the base URL and any options you might need
-	client, err := verifyotp.New()
+	client, err := verifyotp.New(verifyotp.WithAPIKey("api_key"))
 	if err != nil {
 		fmt.Println("Error initializing client:", err)
 		return
