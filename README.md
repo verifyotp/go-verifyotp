@@ -29,7 +29,7 @@ func main() {
 	}
 
 	// Send the OTP
-	response, err := client.Verifyotp.SendOTP(context.Background(), otpRequest)
+	response, err := client.SendOTP(context.Background(), otpRequest)
 	if err != nil {
 		fmt.Println("Error sending OTP:", err)
 		return
