@@ -6,27 +6,40 @@
 
 ...
 
+package main
+
 import (
-  "context"
-  verify "github.com/verifyotp/go-verifyotp"
+	"context"
+	"fmt"
+	verifyotp "github.com/verifyotp/go-verifyotp" // Import the package from your local directory
 )
 
-func VerifyUser(phoneNo string) error {
+func main() {
+	// Initialize the client with the base URL and any options you might need
+	client, err := verifyotp.New()
+	if err != nil {
+		fmt.Println("Error initializing client:", err)
+		return
+	}
 
-  client, err := verify.New()
-  if err != nil {
-    return err
-  }
+	// Prepare the OTP request parameters
+	otpRequest := verifyotp.VerifyotpSendOTPRequest{
+		Recipient:   "user@example.com", // Recipient's email or phone number
+		Channel:     "email",      // Channel to send OTP (email, SMS, etc.)
+	}
 
-  _, err = client.SendOTP(context.Background(), verify.VerifyotpSendOTPRequest{
-      Recipient: "+234940304500",
-      Channel: "sms",
-    }
-  if err != nil {
-    return err
-  }
+	// Send the OTP
+	response, err := client.Verifyotp.SendOTP(context.Background(), otpRequest)
+	if err != nil {
+		fmt.Println("Error sending OTP:", err)
+		return
+	}
 
-  return nil  
+	// Print the response
+	fmt.Println("OTP sent successfully!")
+	fmt.Printf("Reference: %s\n", response.Data.Reference)
 }
+
+
 
 ```

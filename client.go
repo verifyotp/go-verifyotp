@@ -1,4 +1,4 @@
-package client
+package verifyotp
 
 import (
 	"bytes"
@@ -11,23 +11,27 @@ import (
 	"time"
 )
 
-// Client is an API client for the api-83s2 Encore application.
+// Client is an API client for the application.
 type Client struct {
-	Verifyotp VerifyotpClient
+	verifyotpClient
 }
 
-// BaseURL is the base URL for calling the Encore application's API.
+// BaseURL is the base URL for calling the application's API.
 type BaseURL string
+
+const (
+	Production    BaseURL = "http://api.verifyotp.io"
+	clientVersion string  = "v0.0.3"
+)
 
 // Option allows you to customise the baseClient used by the Client
 type Option = func(client *baseClient) error
 
-// New returns a Client for calling the public and authenticated APIs of your Encore application.
+// New returns a Client for calling the public and authenticated APIs of your application.
 // You can customize the behaviour of the client using the given Option functions, such as WithHTTPClient or WithAuthFunc.
 func New(options ...Option) (*Client, error) {
-	// Parse the base URL where the Encore application is being hosted
-
-	const target BaseURL = "http://api.verifyotp.io"
+	target := BaseURL(Production)
+	// Parse the base URL where the application is being hosted
 	baseURL, err := url.Parse(string(target))
 	if err != nil {
 		return nil, fmt.Errorf("unable to parse base url: %w", err)
@@ -37,7 +41,7 @@ func New(options ...Option) (*Client, error) {
 	base := &baseClient{
 		baseURL:    baseURL,
 		httpClient: http.DefaultClient,
-		userAgent:  "Go-Client (v1)",
+		userAgent:  "Go-VerifyOTP (Client/" + clientVersion + ")",
 	}
 
 	// Apply any given options
@@ -47,7 +51,7 @@ func New(options ...Option) (*Client, error) {
 		}
 	}
 
-	return &Client{Verifyotp: &verifyotpClient{base}}, nil
+	return &Client{&_verifyotpClient{base}}, nil
 }
 
 // WithHTTPClient can be used to configure the underlying HTTP client used when making API calls.
@@ -79,21 +83,23 @@ func WithAuthFunc(authGenerator func(ctx context.Context) (AccountMyAuthParams, 
 }
 
 type AccountMyAuthParams struct {
-	APIKEY        string `header:"X-API-KEY"`
-}
-
-type VerifyotpOTPEntry struct {
-	Channel   string    `json:"channel"`
-	Reference string    `json:"reference"`
-	Recipient string    `json:"recipient"`
-	OTP       string    `json:"otp,omitempty"`
-	ExpiresAt time.Time `json:"expires_at"`
+	APIKEY string `header:"X-API-KEY"`
 }
 
 type VerifyotpOTPResponse struct {
-	Status  string             `json:"status"`
-	Message string             `json:"message"`
-	Data    *VerifyotpOTPEntry `json:"data,omitempty"`
+	Status  string                    `json:"status"`
+	Message string                    `json:"message"`
+	Data    *VerifyotpOTPResponseData `json:"data,omitempty"`
+}
+
+type VerifyotpOTPResponseData struct {
+	Channel      string    `json:"channel"`
+	Reference    string    `json:"reference"`
+	Recipient    string    `json:"recipient"`
+	OTP          string    `json:"otp,omitempty"`
+	Length       int       `json:"length"`
+	ExpiresAt    time.Time `json:"expires_at"`
+	AttemptsLeft int       `json:"attempts_left"`
 }
 
 type VerifyotpQueryOTPStatusRequest struct {
@@ -101,22 +107,23 @@ type VerifyotpQueryOTPStatusRequest struct {
 }
 
 type VerifyotpSendOTPRequest struct {
-	Length    int               `json:"length"` // optional
-	Recipient string            `json:"recipient"`
-	Channel   string            `json:"channel"`
-	Expiry    int               `json:"expiry"` // in mins
-	Vars      map[string]string `json:"vars"`
+	Length      int    `json:"length"` // optional
+	Recipient   string `json:"recipient"`
+	Channel     string `json:"channel"`
+	Expiry      int    `json:"expiry"`      // in mins
+	MaxAttempts int    `json:"attempts"`    // optional
+	TemplateID  string `json:"template_id"` // optional
 }
 
 // VerifyOTPRequest represents the request body for verifying an OTP.
 type VerifyotpVerifyOTPRequest struct {
-	Reference string `json:"reference"`
+	Reference string `json:"reference"` //either reference or recipient
 	OTP       string `json:"otp"`
 }
 
-// VerifyotpClient Provides you access to call public and authenticated APIs on verifyotp. The concrete implementation is verifyotpClient.
+// verifyotpClient Provides you access to call public and authenticated APIs on verifyotp. The concrete implementation is verifyotpClient.
 // It is setup as an interface allowing you to use GoMock to create mock implementations during tests.
-type VerifyotpClient interface {
+type verifyotpClient interface {
 	// Query retrieves the status of the OTP verification.
 	Query(ctx context.Context, params VerifyotpQueryOTPStatusRequest) (VerifyotpOTPResponse, error)
 
@@ -127,14 +134,14 @@ type VerifyotpClient interface {
 	VerifyOTP(ctx context.Context, params VerifyotpVerifyOTPRequest) (VerifyotpOTPResponse, error)
 }
 
-type verifyotpClient struct {
+type _verifyotpClient struct {
 	base *baseClient
 }
 
-var _ VerifyotpClient = (*verifyotpClient)(nil)
+var _ verifyotpClient = (*_verifyotpClient)(nil)
 
 // Query retrieves the status of the OTP verification.
-func (c *verifyotpClient) Query(ctx context.Context, params VerifyotpQueryOTPStatusRequest) (resp VerifyotpOTPResponse, err error) {
+func (c *_verifyotpClient) Query(ctx context.Context, params VerifyotpQueryOTPStatusRequest) (resp VerifyotpOTPResponse, err error) {
 	// Convert our params into the objects we need for the request
 	reqEncoder := &serde{}
 
@@ -146,7 +153,7 @@ func (c *verifyotpClient) Query(ctx context.Context, params VerifyotpQueryOTPSta
 	}
 
 	// Now make the actual call to the API
-	_, err = callAPI(ctx, c.base, "GET", fmt.Sprintf("/api/v1/otp/status?%s", queryString.Encode()), nil, nil, &resp)
+	_, err = callAPI(ctx, c.base, "GET", fmt.Sprintf("/v1/otp/status?%s", queryString.Encode()), nil, nil, &resp)
 	if err != nil {
 		return
 	}
@@ -155,9 +162,9 @@ func (c *verifyotpClient) Query(ctx context.Context, params VerifyotpQueryOTPSta
 }
 
 // Send OTP
-func (c *verifyotpClient) SendOTP(ctx context.Context, params VerifyotpSendOTPRequest) (resp VerifyotpOTPResponse, err error) {
+func (c *_verifyotpClient) SendOTP(ctx context.Context, params VerifyotpSendOTPRequest) (resp VerifyotpOTPResponse, err error) {
 	// Now make the actual call to the API
-	_, err = callAPI(ctx, c.base, "POST", "/api/v1/otp/send", nil, params, &resp)
+	_, err = callAPI(ctx, c.base, "POST", "/v1/otp/send", nil, params, &resp)
 	if err != nil {
 		return
 	}
@@ -166,9 +173,9 @@ func (c *verifyotpClient) SendOTP(ctx context.Context, params VerifyotpSendOTPRe
 }
 
 // Verify OTP update the status of the OTP verification.
-func (c *verifyotpClient) VerifyOTP(ctx context.Context, params VerifyotpVerifyOTPRequest) (resp VerifyotpOTPResponse, err error) {
+func (c *_verifyotpClient) VerifyOTP(ctx context.Context, params VerifyotpVerifyOTPRequest) (resp VerifyotpOTPResponse, err error) {
 	// Now make the actual call to the API
-	_, err = callAPI(ctx, c.base, "POST", "/api/v1/otp/verify", nil, params, &resp)
+	_, err = callAPI(ctx, c.base, "POST", "/v1/otp/verify", nil, params, &resp)
 	if err != nil {
 		return
 	}
@@ -183,7 +190,7 @@ type HTTPDoer interface {
 	Do(req *http.Request) (*http.Response, error)
 }
 
-// baseClient holds all the information we need to make requests to an Encore application
+// baseClient holds all the information we need to make requests to an application
 type baseClient struct {
 	authGenerator func(ctx context.Context) (AccountMyAuthParams, error) // The function which will add the authentication data to the requests
 	httpClient    HTTPDoer                                               // The HTTP client which will be used for all API requests
@@ -191,7 +198,7 @@ type baseClient struct {
 	userAgent     string                                                 // What user agent we will use in the API requests
 }
 
-// Do sends the req to the Encore application adding the authorization token as required.
+// Do sends the req to the application adding the authorization token as required.
 func (b *baseClient) Do(req *http.Request) (*http.Response, error) {
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("User-Agent", b.userAgent)
@@ -304,7 +311,7 @@ const (
 
 	// ErrCanceled indicates the operation was canceled (typically by the caller).
 	//
-	// Encore will generate this error code when cancellation is requested.
+	// will generate this error code when cancellation is requested.
 	ErrCanceled ErrCode = 1
 
 	// ErrUnknown error. An example of where this error may be returned is
@@ -313,7 +320,7 @@ const (
 	// errors raised by APIs that do not return enough error information
 	// may be converted to this error.
 	//
-	// Encore will generate this error code in the above two mentioned cases.
+	// will generate this error code in the above two mentioned cases.
 	ErrUnknown ErrCode = 2
 
 	// ErrInvalidArgument indicates client specified an invalid argument.
