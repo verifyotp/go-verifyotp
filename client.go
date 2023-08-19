@@ -64,15 +64,17 @@ func WithHTTPClient(client HTTPDoer) Option {
 	}
 }
 
+
 // WithAuth allows you to set the authentication data to be used with each request
-func WithAuth(auth AccountMyAuthParams) Option {
+func WithAPIKey(apiKey string) Option {
 	return func(base *baseClient) error {
 		base.authGenerator = func(_ context.Context) (AccountMyAuthParams, error) {
-			return auth, nil
+			return AccountMyAuthParams{APIKEY: apiKey}, nil
 		}
 		return nil
 	}
 }
+
 
 // WithAuthFunc allows you to pass a function which is called for each request to return the authentication data to be used with each request
 func WithAuthFunc(authGenerator func(ctx context.Context) (AccountMyAuthParams, error)) Option {
